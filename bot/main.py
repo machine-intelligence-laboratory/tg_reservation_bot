@@ -254,6 +254,8 @@ async def main() -> None:
         booking_updates = result.get("booking_updates") or []
         if result.get("booking_update") and not booking_updates:
             booking_updates = [result["booking_update"]]
+        if booking_updates:
+            log.info("booking_updates: %s", booking_updates)
         for upd in booking_updates:
             field = upd.get("field")
             value = upd.get("value")
@@ -266,6 +268,14 @@ async def main() -> None:
             state = booking_state_from_row(booking_row or {})
 
         booking_row = get_booking(settings.database_path, booking_id)
+        if booking_row:
+            d = dict(booking_row)
+            log.info(
+                "Booking state: date=%r time=%r guests=%r",
+                d.get("date_text"),
+                d.get("time_text"),
+                d.get("guests_count_text"),
+            )
         if booking_row and all_booking_fields_filled(booking_row):
             log.info("All required fields filled, calling handle_booking_complete")
             await handle_booking_complete(
