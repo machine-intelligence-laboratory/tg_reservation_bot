@@ -43,9 +43,9 @@ def booking_state_from_row(booking_row) -> dict:
 
 
 def all_booking_fields_filled(booking_row) -> bool:
-    """Проверка, что собраны date, time, guests, name (phone опционален)."""
+    """Проверка, что собраны date, time, guests."""
     d = dict(booking_row) if booking_row else {}
-    required = ["date_text", "time_text", "guests_count_text", "name_text"]
+    required = ["date_text", "time_text", "guests_count_text"]
     return all(d.get(f) for f in required)
 
 
@@ -77,8 +77,6 @@ async def handle_booking_complete(
             f"Дата: {structured.get('date')}\n"
             f"Время: {structured.get('time')}\n"
             f"Гостей: {structured.get('guests_count')}\n"
-            f"Имя: {structured.get('name', '—')}\n"
-            f"Телефон: {structured.get('phone', '—')}\n"
             f"Этаж: {structured.get('floor', '—')}\n"
         )
         if structured.get("notes"):
@@ -87,8 +85,11 @@ async def handle_booking_complete(
         await message.answer(reply)
         add_message(db_path, conversation_id, "assistant", reply)
 
-        await message.answer(structured_json)
-        add_message(db_path, conversation_id, "assistant", structured_json)
+        try:
+            await message.answer(structured_json)
+            add_message(db_path, conversation_id, "assistant", structured_json)
+        except Exception as json_err:
+            log.exception("Failed to send JSON: %s", json_err)
     except Exception as exc:
         err = (
             "Не удалось сформировать запрос. Данные сохранены, "
@@ -266,6 +267,7 @@ async def main() -> None:
 
         booking_row = get_booking(settings.database_path, booking_id)
         if booking_row and all_booking_fields_filled(booking_row):
+            log.info("All required fields filled, calling handle_booking_complete")
             await handle_booking_complete(
                 message,
                 settings.database_path,
