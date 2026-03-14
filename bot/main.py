@@ -31,6 +31,7 @@ from .db import (
 )
 from .openai_client import (
     build_structured_request,
+    generate_booking_confirmation,
     process_turn,
     BOOKING_FIELDS,
 )
@@ -72,15 +73,12 @@ async def handle_booking_complete(
         structured_json = json.dumps(structured, ensure_ascii=False, indent=2)
         mark_booking_completed(db_path, booking_id, structured_json)
 
-        reply = (
-            "Спасибо! Ваша заявка сформирована.\n\n"
-            f"Дата: {structured.get('date')}\n"
-            f"Время: {structured.get('time')}\n"
-            f"Гостей: {structured.get('guests_count')}\n"
-            f"Этаж: {structured.get('floor', '—')}\n"
+        reply = generate_booking_confirmation(
+            structured,
+            api_key,
+            base_url,
+            model,
         )
-        if structured.get("notes"):
-            reply += f"\nКомментарий: {structured['notes']}"
 
         await message.answer(reply)
         add_message(db_path, conversation_id, "assistant", reply)
