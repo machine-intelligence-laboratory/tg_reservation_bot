@@ -254,6 +254,21 @@ async def main() -> None:
             "Создана копия последнего бронирования. Что хотите изменить?",
         )
 
+    @dp.message(Command("show"))
+    async def cmd_show(message: Message) -> None:
+        """Отдать JSON последнего бронирования из БД."""
+        chat_id = message.chat.id
+        row = get_last_completed_booking(settings.database_path, chat_id)
+        if not row:
+            await message.answer("У вас пока нет завершённых бронирований.")
+            return
+        row = dict(row)
+        json_str = row.get("structured_request_json")
+        if not json_str:
+            await message.answer("У последнего бронирования нет сохранённого JSON.")
+            return
+        await message.answer(json_str)
+
     @dp.message(F.text)
     async def handle_text(message: Message) -> None:
         log.info("Received text from chat_id=%s: %r", message.chat.id, (message.text or "")[:80])
