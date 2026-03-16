@@ -216,7 +216,7 @@ PROCESS_TURN_FORMAT = """
 
 Правила:
 - intent "booking_param": гость указывает параметр брони. ОБЯЗАТЕЛЬНО верни booking_update с извлечённым значением. Поля: date_text (YYYY-MM-DD), time_text (HH:MM), guests_count_text (число), floor_text (1/2), certificate_needed_text (true/false). booking_update может быть объектом или массивом. Когда «Сейчас запрашиваем: X» и гость отвечает (дата/время/число/да/нет) — всегда заполняй booking_update.
-- intent "faq": вопрос о ресторане — ответь по имеющейся информации, мягко верни к брони.
+- intent "faq": вопрос о ресторане — ответь по имеющейся информации, мягко верни к брони. Если гость просит показать/напомнить последнее бронирование — используй данные из контекста «Последнее завершённое бронирование гостя» в ответе.
 - intent "off_topic": сообщение не о ресторане и не о брони — вежливо отклонь и предложи помощь с бронированием.
 - response: всегда заполняй, пиши от лица оператора, коротко и дружелюбно. Спрашивай всегда только ОДИН следующий параметр (см. «Сейчас запрашиваем»). Не пиши «почти готово».
 """
@@ -230,9 +230,12 @@ def process_turn(
     api_key: str,
     base_url: Optional[str] = None,
     model: str = "gpt-4.1",
+    last_booking_summary: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Единый LLM-вызов: определение намерения, обновление брони, генерация ответа.
+    last_booking_summary — текст последнего завершённого бронирования гостя (если есть);
+    если гость просит показать бронь — используй это в response.
     Возвращает {intent, booking_updates: [...], response}.
     """
     client_kwargs: Dict[str, Any] = {"api_key": api_key, "timeout": 45.0}
@@ -250,6 +253,8 @@ def process_turn(
         f"Сегодня: {today_iso}. Текущие данные брони: {state_str or 'пусто'}.\n"
         f"Ожидаемые поля: {', '.join(BOOKING_FIELDS)}.{next_hint}"
     )
+    if last_booking_summary:
+        context += f"\nПоследнее завершённое бронирование гостя (если просит показать — озвучь в ответе): {last_booking_summary}"
 
     system_content = HOST_SYSTEM_PROMPT + RESTAURANT_INFO + "\n\n" + PROCESS_TURN_FORMAT
     messages: List[Dict[str, str]] = [

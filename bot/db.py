@@ -227,3 +227,41 @@ def mark_booking_completed(
         )
         conn.commit()
 
+
+def get_last_completed_booking(db_path: str, chat_id: int):
+    """Последнее завершённое бронирование по chat_id (user id)."""
+    with get_connection(db_path) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id FROM conversations WHERE chat_id = ? ORDER BY id DESC LIMIT 1",
+            (chat_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        conversation_id = int(row["id"])
+        cur.execute(
+            """
+            SELECT * FROM bookings
+            WHERE conversation_id = ? AND completed = 1
+            ORDER BY id DESC LIMIT 1
+            """,
+            (conversation_id,),
+        )
+        return cur.fetchone()
+
+
+def copy_booking_fields(db_path: str, target_booking_id: int, source_row) -> None:
+    """Копирует поля брони из source в target (для «изменить бронирование»)."""
+    if not source_row:
+        return
+    source = dict(source_row)
+    fields = (
+        "date_text", "time_text", "guests_count_text",
+        "name_text", "phone_text", "floor_text", "certificate_needed_text",
+    )
+    for f in fields:
+        v = source.get(f)
+        if v is not None and str(v).strip():
+            update_booking_field(db_path, target_booking_id, f, str(v).strip())
+

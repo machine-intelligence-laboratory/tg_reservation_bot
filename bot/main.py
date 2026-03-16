@@ -25,6 +25,8 @@ from .db import (
     add_message,
     get_or_create_booking,
     get_booking,
+    get_last_completed_booking,
+    copy_booking_fields,
     update_booking_field,
     mark_booking_completed,
     reset_booking,
@@ -198,11 +200,86 @@ async def main() -> None:
         await message.answer(reply)
         add_message(settings.database_path, conversation_id, "assistant", reply)
 
+    @dp.message(Command("last_booking"))
+    async def cmd_last_booking(message: Message) -> None:
+        """Запросить последнее бронирование (по user id = chat_id)."""
+        chat_id = message.chat.id
+        row = get_last_completed_booking(settings.database_path, chat_id)
+        if not row:
+            await message.answer("У вас пока нет завершённых бронирований.")
+            return
+        json_str = row.get("structured_request_json") if row else None
+        if json_str:
+            try:
+                data = json.loads(json_str)
+                lines = [
+                    "Ваше последнее бронирование:",
+                    f"Дата: {data.get('date', '—')}",
+                    f"Время: {data.get('time', '—')}",
+                    f"Гостей: {data.get('guests_count', '—')}",
+                    f"Этаж: {data.get('floor', '—')}",
+                ]
+                if data.get("notes"):
+                    lines.append(f"Пожелания: {data['notes']}")
+                await message.answer("\n".join(lines))
+            except json.JSONDecodeError:
+                await message.answer("Бронирование найдено, но данные в неверном формате.")
+        else:
+            d = dict(row)
+            await message.answer(
+                f"Последнее бронирование: {d.get('date_text', '—')} "
+                f"{d.get('time_text', '—')}, {d.get('guests_count_text', '—')} гостей, "
+                f"этаж {d.get('floor_text', '—')}."
+            )
+
+    @dp.message(Command("change_booking"))
+    async def cmd_change_booking(message: Message) -> None:
+        """Изменить последнее бронирование: копируем его в новую черновик и продолжаем диалог."""
+        chat_id = message.chat.id
+        conversation_id = get_or_create_conversation(settings.database_path, chat_id)
+        last = get_last_completed_booking(settings.database_path, chat_id)
+        if not last:
+            await message.answer("У вас нет завершённого бронирования для изменения.")
+            return
+        reset_booking(settings.database_path, conversation_id)
+        add_message(settings.database_path, conversation_id, "user", "[Изменить последнее бронирование]")
+        booking_id = get_or_create_booking(settings.database_path, conversation_id)
+        copy_booking_fields(settings.database_path, booking_id, last)
+        await message.answer(
+            "Создана копия вашего последнего бронирования. Напишите, что хотите изменить "
+            "(дата, время, число гостей, этаж или сертификат), или отправьте /reset чтобы начать с нуля."
+        )
+        add_message(
+            settings.database_path, conversation_id, "assistant",
+            "Создана копия последнего бронирования. Что хотите изменить?",
+        )
+
     @dp.message(F.text)
     async def handle_text(message: Message) -> None:
         log.info("Received text from chat_id=%s: %r", message.chat.id, (message.text or "")[:80])
         chat_id = message.chat.id
         text = (message.text or "").strip()
+
+        # Изменить последнее бронирование по фразе
+        if text and text.lower() in ("изменить последнее бронирование", "изменить бронирование"):
+            conversation_id = get_or_create_conversation(settings.database_path, chat_id)
+            add_message(settings.database_path, conversation_id, "user", text)
+            last = get_last_completed_booking(settings.database_path, chat_id)
+            if not last:
+                await message.answer("У вас нет завершённого бронирования для изменения.")
+            else:
+                reset_booking(settings.database_path, conversation_id)
+                booking_id = get_or_create_booking(settings.database_path, conversation_id)
+                copy_booking_fields(settings.database_path, booking_id, last)
+                await message.answer(
+                    "Создана копия вашего последнего бронирования. Напишите, что хотите изменить "
+                    "(дата, время, число гостей, этаж или сертификат), или отправьте /reset чтобы начать с нуля."
+                )
+                add_message(
+                    settings.database_path, conversation_id, "assistant",
+                    "Создана копия последнего бронирования. Что хотите изменить?",
+                )
+            return
 
         if len(text) > 500:
             await message.answer(
@@ -231,6 +308,34 @@ async def main() -> None:
             settings.database_path, conversation_id, limit=30
         )
 
+        last_row = get_last_completed_booking(settings.database_path, chat_id)
+        if not last_row:
+            last_booking_summary = "нет завершённых бронирований"
+        else:
+            last_booking_summary = None
+            json_str = last_row.get("structured_request_json")
+            if json_str:
+                try:
+                    data = json.loads(json_str)
+                    last_booking_summary = (
+                        f"{data.get('date', '—')} в {data.get('time', '—')}, "
+                        f"{data.get('guests_count', '—')} гостей, этаж {data.get('floor', '—')}"
+                    )
+                    if data.get("notes"):
+                        last_booking_summary += f", пожелания: {data['notes']}"
+                except json.JSONDecodeError:
+                    d = dict(last_row)
+                    last_booking_summary = (
+                        f"{d.get('date_text', '—')} {d.get('time_text', '—')}, "
+                        f"{d.get('guests_count_text', '—')} гостей, этаж {d.get('floor_text', '—')}"
+                    )
+            if last_booking_summary is None:
+                d = dict(last_row)
+                last_booking_summary = (
+                    f"{d.get('date_text', '—')} {d.get('time_text', '—')}, "
+                    f"{d.get('guests_count_text', '—')} гостей, этаж {d.get('floor_text', '—')}"
+                )
+
         try:
             result = await asyncio.wait_for(
                 asyncio.to_thread(
@@ -242,6 +347,7 @@ async def main() -> None:
                     settings.openai_api_key,
                     settings.openai_base_url or None,
                     settings.openai_model,
+                    last_booking_summary,
                 ),
                 timeout=60.0,
             )
