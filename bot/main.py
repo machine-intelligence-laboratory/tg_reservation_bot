@@ -312,6 +312,7 @@ async def main() -> None:
         if not last_row:
             last_booking_summary = "нет завершённых бронирований"
         else:
+            last_row = dict(last_row)
             last_booking_summary = None
             json_str = last_row.get("structured_request_json")
             if json_str:
@@ -324,16 +325,14 @@ async def main() -> None:
                     if data.get("notes"):
                         last_booking_summary += f", пожелания: {data['notes']}"
                 except json.JSONDecodeError:
-                    d = dict(last_row)
                     last_booking_summary = (
-                        f"{d.get('date_text', '—')} {d.get('time_text', '—')}, "
-                        f"{d.get('guests_count_text', '—')} гостей, этаж {d.get('floor_text', '—')}"
+                        f"{last_row.get('date_text', '—')} {last_row.get('time_text', '—')}, "
+                        f"{last_row.get('guests_count_text', '—')} гостей, этаж {last_row.get('floor_text', '—')}"
                     )
             if last_booking_summary is None:
-                d = dict(last_row)
                 last_booking_summary = (
-                    f"{d.get('date_text', '—')} {d.get('time_text', '—')}, "
-                    f"{d.get('guests_count_text', '—')} гостей, этаж {d.get('floor_text', '—')}"
+                    f"{last_row.get('date_text', '—')} {last_row.get('time_text', '—')}, "
+                    f"{last_row.get('guests_count_text', '—')} гостей, этаж {last_row.get('floor_text', '—')}"
                 )
 
         try:
